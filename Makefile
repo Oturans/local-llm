@@ -8,6 +8,7 @@ LLAMA_SERVER_BIN ?=
 LLAMA_SERVER ?= $(if $(LLAMA_SERVER_BIN),$(LLAMA_SERVER_BIN),$(shell if command -v llama-server >/dev/null 2>&1; then command -v llama-server; elif [ -x /opt/homebrew/bin/llama-server ]; then echo /opt/homebrew/bin/llama-server; elif [ -x /usr/local/bin/llama-server ]; then echo /usr/local/bin/llama-server; elif [ -x /opt/homebrew/opt/llama.cpp/bin/llama-server ]; then echo /opt/homebrew/opt/llama.cpp/bin/llama-server; elif [ -x /usr/local/opt/llama.cpp/bin/llama-server ]; then echo /usr/local/opt/llama.cpp/bin/llama-server; fi))
 LITELLM_PORT ?= 4000
 MASTER_KEY   ?= sk-local-change-me
+FAST_NGL     ?= 0
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 
@@ -84,10 +85,10 @@ check-llama-server:
 	fi
 
 serve-fast: check-llama-server
-	@echo "Запуск fast-сервера (GPU) на порту 8080..."
+	@echo "Запуск fast-сервера на порту 8080 (FAST_NGL=$(FAST_NGL))..."
 	nohup $(LLAMA_SERVER) \
 	  -m $(FAST_MODEL) \
-	  -c 4096 -ngl 999 -t 10 -b 512 \
+	  -c 4096 -ngl $(FAST_NGL) -t 10 -b 512 \
 	  --host 127.0.0.1 --port 8080 \
 	  > logs/llama-fast.log 2>&1 & echo $$! > .pid-fast
 	@echo "PID: $$(cat .pid-fast) | лог: logs/llama-fast.log"
