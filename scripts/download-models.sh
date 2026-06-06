@@ -1,9 +1,8 @@
 #!/usr/bin/env zsh
 # download-models.sh — скачать выбранные GGUF-модели в папку models/
 # Использование:
-#   ./scripts/download-models.sh          — скачать все модели по умолчанию
+#   ./scripts/download-models.sh          — скачать fast-модель
 #   ./scripts/download-models.sh fast     — только fast-профиль
-#   ./scripts/download-models.sh strong   — только strong-профиль
 
 set -euo pipefail
 
@@ -17,7 +16,6 @@ HF_BASE="https://huggingface.co"
 typeset -a MODELS
 MODELS=(
   "fast   bartowski/google_gemma-3-4b-it-GGUF       google_gemma-3-4b-it-Q4_K_M.gguf"
-  "strong bartowski/Qwen2.5-14B-Instruct-GGUF          Qwen2.5-14B-Instruct-Q4_K_M.gguf"
 )
 
 FILTER="${1:-all}"

@@ -5,12 +5,6 @@ model_list:
       api_base: http://host.docker.internal:8080/v1
       api_key: dummy
 
-  - model_name: local-strong
-    litellm_params:
-      model: openai/local-strong
-      api_base: http://host.docker.internal:8081/v1
-      api_key: dummy
-
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
 
