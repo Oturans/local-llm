@@ -1,4 +1,20 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: litellm-postgres
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-litellm}
+      - POSTGRES_USER=${POSTGRES_USER:-litellm}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-litellm}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-litellm} -d ${POSTGRES_DB:-litellm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: litellm
@@ -7,8 +23,15 @@ services:
     volumes:
       - ./config/litellm_config.yaml:/app/config.yaml:ro
     environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://litellm:litellm@postgres:5432/litellm}
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-local-change-me}
       - UI_USERNAME=${UI_USERNAME:-admin}
       - UI_PASSWORD=${UI_PASSWORD:-changeme}
+    depends_on:
+      postgres:
+        condition: service_healthy
     command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
     restart: unless-stopped
+
+volumes:
+  postgres-data:

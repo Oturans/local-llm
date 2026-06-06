@@ -3,6 +3,7 @@ SHELL := /bin/zsh
 MODELS_DIR := ./models
 FAST_MODEL  := $(MODELS_DIR)/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
 STRONG_MODEL := $(MODELS_DIR)/Qwen2.5-14B-Instruct-Q4_K_M.gguf
+LLAMA_SERVER ?= $(shell if command -v llama-server >/dev/null 2>&1; then command -v llama-server; elif [ -x /opt/homebrew/bin/llama-server ]; then echo /opt/homebrew/bin/llama-server; elif [ -x /usr/local/bin/llama-server ]; then echo /usr/local/bin/llama-server; elif [ -x /opt/homebrew/opt/llama.cpp/bin/llama-server ]; then echo /opt/homebrew/opt/llama.cpp/bin/llama-server; elif [ -x /usr/local/opt/llama.cpp/bin/llama-server ]; then echo /usr/local/opt/llama.cpp/bin/llama-server; fi)
 LITELLM_PORT ?= 4000
 MASTER_KEY   ?= sk-local-change-me
 
@@ -48,18 +49,26 @@ ls-models:
 
 # ── llama-server (native, background via nohup) ───────────────────────────────
 
-serve-fast:
+check-llama-server:
+	@if [ -z "$(LLAMA_SERVER)" ]; then \
+		echo "llama-server not found."; \
+		echo "Install it with: brew install llama.cpp"; \
+		echo "Or build from source with GGML_METAL=ON and set LLAMA_SERVER=/full/path/to/llama-server"; \
+		exit 1; \
+	fi
+
+serve-fast: check-llama-server
 	@echo "Запуск fast-сервера (GPU) на порту 8080..."
-	nohup llama-server \
+	nohup $(LLAMA_SERVER) \
 	  -m $(FAST_MODEL) \
 	  -c 4096 -ngl 999 -t 10 -b 512 \
 	  --host 127.0.0.1 --port 8080 \
 	  > logs/llama-fast.log 2>&1 & echo $$! > .pid-fast
 	@echo "PID: $$(cat .pid-fast) | лог: logs/llama-fast.log"
 
-serve-strong:
+serve-strong: check-llama-server
 	@echo "Запуск strong-сервера (CPU) на порту 8081..."
-	nohup llama-server \
+	nohup $(LLAMA_SERVER) \
 	  -m $(STRONG_MODEL) \
 	  -c 3072 -ngl 0 -t 12 -b 256 \
 	  --host 127.0.0.1 --port 8081 \
@@ -85,7 +94,7 @@ logs-strong:
 
 # ── Полный старт (скачать + запустить серверы + поднять docker) ───────────────
 
-bootstrap: download serve-all up
+bootstrap: download check-llama-server serve-all up
 	@echo "=== bootstrap завершён ==="
 	@echo "  llama fast  -> http://127.0.0.1:8080"
 	@echo "  llama strong-> http://127.0.0.1:8081"
@@ -93,5 +102,5 @@ bootstrap: download serve-all up
 
 .PHONY: up down restart logs ps health list-models \
         download download-fast download-strong ls-models \
-        serve-fast serve-strong serve-all stop-fast stop-strong stop-all \
+        check-llama-server serve-fast serve-strong serve-all stop-fast stop-strong stop-all \
         logs-fast logs-strong bootstrap
