@@ -89,6 +89,33 @@ stop-strong:
 
 stop-all: stop-fast stop-strong
 
+check-process-files:
+	@for pidfile in .pid-fast .pid-strong; do \
+		if [ -f "$$pidfile" ]; then \
+			pid=$$(cat "$$pidfile"); \
+			if kill -0 "$$pid" 2>/dev/null; then \
+				echo "$$pidfile -> PID $$pid жив"; \
+			else \
+				echo "$$pidfile -> PID $$pid мёртв"; \
+			fi; \
+		else \
+			echo "$$pidfile -> файла нет"; \
+		fi; \
+	done
+
+stop-process-files: check-process-files
+	@for pidfile in .pid-fast .pid-strong; do \
+		if [ -f "$$pidfile" ]; then \
+			pid=$$(cat "$$pidfile"); \
+			if kill -0 "$$pid" 2>/dev/null; then \
+				kill "$$pid" && echo "остановлен $$pid (из $$pidfile)"; \
+			else \
+				echo "$$pidfile -> PID $$pid уже не существует"; \
+			fi; \
+			rm -f "$$pidfile"; \
+		fi; \
+	done
+
 logs-fast:
 	tail -f logs/llama-fast.log
 
@@ -105,5 +132,6 @@ bootstrap: download check-llama-server serve-all up
 
 .PHONY: up down restart logs ps health list-models \
         download download-fast download-strong ls-models \
-        check-llama-server serve-fast serve-strong serve-all stop-fast stop-strong stop-all \
+	check-llama-server serve-fast serve-strong serve-all stop-fast stop-strong stop-all \
+	check-process-files stop-process-files \
         logs-fast logs-strong bootstrap
