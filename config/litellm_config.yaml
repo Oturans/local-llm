@@ -12,4 +12,4 @@ model_list:
       api_key: dummy
 
 general_settings:
-  master_key: sk-local-change-me
+  master_key: os.environ/LITELLM_MASTER_KEY
