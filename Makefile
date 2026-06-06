@@ -3,7 +3,7 @@ SHELL := /bin/zsh
 -include .env
 
 MODELS_DIR := ./models
-FAST_MODEL  := $(MODELS_DIR)/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
+FAST_MODEL  := $(MODELS_DIR)/gemma-2-9b-it-Q4_K_M.gguf
 STRONG_MODEL := $(MODELS_DIR)/Qwen2.5-14B-Instruct-Q4_K_M.gguf
 LLAMA_SERVER_BIN ?=
 LLAMA_SERVER ?= $(if $(LLAMA_SERVER_BIN),$(LLAMA_SERVER_BIN),$(shell if command -v llama-server >/dev/null 2>&1; then command -v llama-server; elif [ -x /opt/homebrew/bin/llama-server ]; then echo /opt/homebrew/bin/llama-server; elif [ -x /usr/local/bin/llama-server ]; then echo /usr/local/bin/llama-server; elif [ -x /opt/homebrew/opt/llama.cpp/bin/llama-server ]; then echo /opt/homebrew/opt/llama.cpp/bin/llama-server; elif [ -x /usr/local/opt/llama.cpp/bin/llama-server ]; then echo /usr/local/opt/llama.cpp/bin/llama-server; fi))

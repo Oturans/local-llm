@@ -16,7 +16,7 @@ HF_BASE="https://huggingface.co"
 # Список моделей: <profile> <repo> <filename>
 typeset -a MODELS
 MODELS=(
-  "fast   bartowski/Meta-Llama-3.1-8B-Instruct-GGUF   Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+  "fast   bartowski/gemma-2-9b-it-GGUF               gemma-2-9b-it-Q4_K_M.gguf"
   "strong bartowski/Qwen2.5-14B-Instruct-GGUF          Qwen2.5-14B-Instruct-Q4_K_M.gguf"
 )
 
