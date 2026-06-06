@@ -3,7 +3,8 @@ SHELL := /bin/zsh
 MODELS_DIR := ./models
 FAST_MODEL  := $(MODELS_DIR)/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
 STRONG_MODEL := $(MODELS_DIR)/Qwen2.5-14B-Instruct-Q4_K_M.gguf
-LLAMA_SERVER ?= $(shell if command -v llama-server >/dev/null 2>&1; then command -v llama-server; elif [ -x /opt/homebrew/bin/llama-server ]; then echo /opt/homebrew/bin/llama-server; elif [ -x /usr/local/bin/llama-server ]; then echo /usr/local/bin/llama-server; elif [ -x /opt/homebrew/opt/llama.cpp/bin/llama-server ]; then echo /opt/homebrew/opt/llama.cpp/bin/llama-server; elif [ -x /usr/local/opt/llama.cpp/bin/llama-server ]; then echo /usr/local/opt/llama.cpp/bin/llama-server; fi)
+LLAMA_SERVER_BIN ?=
+LLAMA_SERVER ?= $(if $(LLAMA_SERVER_BIN),$(LLAMA_SERVER_BIN),$(shell if command -v llama-server >/dev/null 2>&1; then command -v llama-server; elif [ -x /opt/homebrew/bin/llama-server ]; then echo /opt/homebrew/bin/llama-server; elif [ -x /usr/local/bin/llama-server ]; then echo /usr/local/bin/llama-server; elif [ -x /opt/homebrew/opt/llama.cpp/bin/llama-server ]; then echo /opt/homebrew/opt/llama.cpp/bin/llama-server; elif [ -x /usr/local/opt/llama.cpp/bin/llama-server ]; then echo /usr/local/opt/llama.cpp/bin/llama-server; fi))
 LITELLM_PORT ?= 4000
 MASTER_KEY   ?= sk-local-change-me
 
@@ -53,7 +54,7 @@ check-llama-server:
 	@if [ -z "$(LLAMA_SERVER)" ]; then \
 		echo "llama-server not found."; \
 		echo "Install it with: brew install llama.cpp"; \
-		echo "Or build from source with GGML_METAL=ON and set LLAMA_SERVER=/full/path/to/llama-server"; \
+		echo "Or build from source with GGML_METAL=ON and set LLAMA_SERVER_BIN=/full/path/to/llama-server"; \
 		exit 1; \
 	fi
 
