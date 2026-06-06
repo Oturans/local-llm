@@ -1,0 +1,7 @@
+# Local model files
+models/
+*.gguf
+
+# Local runtime / secrets
+.env
+*.log
