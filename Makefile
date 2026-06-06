@@ -116,6 +116,14 @@ stop-process-files: check-process-files
 		fi; \
 	done
 
+llama-processes: check-process-files
+	@echo "== llama-server процессы =="
+	@pgrep -af 'llama-server' || echo "Нет процессов llama-server"
+
+status: llama-processes
+	@echo "== docker compose =="
+	@docker compose ps 2>/dev/null || echo "docker compose не запущен или недоступен"
+
 logs-fast:
 	tail -f logs/llama-fast.log
 
@@ -133,5 +141,5 @@ bootstrap: download check-llama-server serve-all up
 .PHONY: up down restart logs ps health list-models \
         download download-fast download-strong ls-models \
 	check-llama-server serve-fast serve-strong serve-all stop-fast stop-strong stop-all \
-	check-process-files stop-process-files \
+	check-process-files stop-process-files llama-processes status \
         logs-fast logs-strong bootstrap
