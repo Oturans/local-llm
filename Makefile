@@ -1,5 +1,7 @@
 SHELL := /bin/zsh
 
+-include .env
+
 MODELS_DIR := ./models
 FAST_MODEL  := $(MODELS_DIR)/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
 STRONG_MODEL := $(MODELS_DIR)/Qwen2.5-14B-Instruct-Q4_K_M.gguf
