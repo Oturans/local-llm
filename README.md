@@ -66,8 +66,115 @@ make up
 
 ```bash
 make health
-make models
+make list-models
 ```
+
+Порядок проверки, если связка не работает
+1. Сначала проверяй fast-модель напрямую на llama-server (без LiteLLM).
+2. Только после этого проверяй LiteLLM на 4000.
+3. Если напрямую работает, а через LiteLLM нет, проблема в proxy/DB/config.
+
+Проверка llama-server напрямую (обязательно)
+1. Health:
+
+```bash
+curl -sS http://127.0.0.1:8080/health
+```
+
+2. Тест RU:
+
+```bash
+curl -sS http://127.0.0.1:8080/v1/chat/completions \
+	-H "Content-Type: application/json" \
+	-d '{
+		"model": "local-fast",
+		"messages": [
+			{"role": "system", "content": "Отвечай коротко."},
+			{"role": "user", "content": "Ответь по-русски одной фразой: как тебя зовут?"}
+		],
+		"temperature": 0.2,
+		"max_tokens": 80
+	}'
+```
+
+3. Тест EN:
+
+```bash
+curl -sS http://127.0.0.1:8080/v1/chat/completions \
+	-H "Content-Type: application/json" \
+	-d '{
+		"model": "local-fast",
+		"messages": [
+			{"role": "system", "content": "Answer briefly."},
+			{"role": "user", "content": "Reply in one short English sentence: what is your name?"}
+		],
+		"temperature": 0.2,
+		"max_tokens": 80
+	}'
+```
+
+Проверка через LiteLLM (порт 4000)
+1. Health:
+
+```bash
+curl -sS http://127.0.0.1:4000/health
+```
+
+2. Список моделей:
+
+```bash
+curl -sS http://127.0.0.1:4000/v1/models \
+	-H "Authorization: Bearer sk-local-change-me"
+```
+
+3. Chat через proxy:
+
+```bash
+curl -sS http://127.0.0.1:4000/v1/chat/completions \
+	-H "Authorization: Bearer sk-local-change-me" \
+	-H "Content-Type: application/json" \
+	-d '{
+		"model": "local-fast",
+		"messages": [{"role": "user", "content": "Коротко ответь по-русски: проверка через LiteLLM"}],
+		"temperature": 0.2,
+		"max_tokens": 80
+	}'
+```
+
+Если видишь Empty reply from server на 4000
+1. Проверь контейнеры:
+
+```bash
+docker compose ps
+```
+
+2. Проверь, что Postgres healthy.
+3. Проверь env в контейнере LiteLLM:
+
+```bash
+docker exec litellm env | grep -E "DATABASE_URL|LITELLM_MASTER_KEY|UI_USERNAME|UI_PASSWORD"
+```
+
+4. Проверь процессы внутри контейнера:
+
+```bash
+docker exec litellm sh -lc 'ps -ef; netstat -ltnp 2>/dev/null | head -30'
+```
+
+5. Проверь логи:
+
+```bash
+docker logs litellm | tail -100
+```
+
+6. Если 8080 напрямую отвечает, а 4000 нет, перезапусти proxy-стек:
+
+```bash
+make down
+make up
+```
+
+7. Если проблема повторяется, проверь корректность DATABASE_URL и config/litellm_config.yaml.
 
 Важно по безопасности
 - Перед внешним доступом поменяй ключ в config/litellm_config.yaml (master_key).
