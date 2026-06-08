@@ -1,181 +1,137 @@
-llmapp сборки для моего ноута с дискретной графикой
+# local-llm
 
-Цель
-- Поднять локальный LLM API на macOS Intel с максимальной производительностью за счет нативного запуска llama.cpp через Metal.
-- Использовать Docker для маршрутизации и единого API endpoint, а не для GPU-инференса.
+Local LLM stack for MacBook Pro 16 (2019) — Intel i9 + AMD Radeon Pro 5600M.
 
-Мой ноутбук
-- MacBook Pro 16 (2019)
-- CPU: Intel Core i9-9980HK
-- RAM: 64 GB
-- GPU: AMD Radeon Pro 5600M (8 GB HBM2)
+## Hardware
 
-Почему именно такая схема
-- На macOS Intel Docker-контейнеры обычно не дают стабильный GPU passthrough для llama.cpp.
-- Нативный запуск llama.cpp на хосте позволяет задействовать Metal и дискретную графику.
-- Docker при этом удобен для оркестрации: один endpoint, несколько моделей, изоляция обвязки.
+- **CPU:** Intel Core i9-9980HK
+- **RAM:** 64 GB
+- **GPU:** AMD Radeon Pro 5600M (8 GB HBM2) — discrete PCIe GPU
 
-Рекомендуемая архитектура
-- llama-server #1 на хосте: быстрая 7B/8B модель с GPU offload.
-- llama-server #2 на хосте: более тяжелая модель (14B) в CPU-only или с частичным offload.
-- LiteLLM в Docker: единая точка входа для клиентов и роутинг по model_name.
+## GPU Status
 
-Быстрый старт
-1. Установить llama.cpp (через brew или сборку из исходников с GGML_METAL=ON).
-2. Подготовить GGUF-модели в локальной папке.
-3. Запустить два llama-server процесса на разных портах (например, 8080 и 8081).
-4. Поднять LiteLLM в Docker на порту 4000.
-5. Отправлять запросы на один endpoint и выбирать модель полем model.
+> **GPU inference is not functional on this machine.**
 
-Стартовые параметры (профиль)
-- Fast (GPU): 8B Q4_K_M, context 4096, ngl 999.
-- Strong (стабильный): 14B Q4_K_M, context 3072, ngl 0..40 по стабильности.
+Extensive testing confirmed that AMD Radeon Pro 5600M (discrete PCIe GPU on Intel Mac x86_64)
+does not produce correct output with any available Metal backend:
 
-Тюнинг стабильности
-- При OOM сначала уменьшать context: 4096 -> 3072 -> 2048.
-- Если не помогло, снижать ngl.
-- Затем переходить на более легкую квантовку или меньшую модель.
-- Всегда держать ноутбук на питании и отключить auto graphics switching.
+| Tool | GPU detected | Output correct |
+|---|---|---|
+| llama.cpp (custom build, Metal ON) | yes | no — garbage output |
+| Ollama 0.30.6 | no — CPU only | yes |
+| brew llama-server 9430 | no — built without Metal | yes |
 
-Проверка после запуска
-- Проверить health каждого llama-server.
-- Проверить список моделей на API шлюзе.
-- Выполнить 1-2 тестовых chat/completions запроса с разными model_name.
+Root cause: Metal compute kernels in llama.cpp are not validated for discrete AMD GPUs
+on Intel Mac x86_64. Apple Silicon (M-series) is the only supported Metal platform.
 
-Что это дает
-- Максимум производительности на твоей дискретной графике.
-- Параллельный запуск нескольких моделей.
-- Удобная интеграция с IDE, скриптами и локальными сервисами через единый API.
+**Current setup runs CPU-only.** Performance: ~6 t/s with Gemma 3 4B Q4_K_M.
 
-Что уже подготовлено в репозитории
-- docker-compose.yml: запуск LiteLLM на порту 4000.
-- config/litellm_config.yaml: роутинг на два локальных llama-server endpoint.
-- .env.example: шаблон переменных окружения.
-- .gitignore: исключение локальных моделей и .env.
-- Makefile: команды up/down/logs/health/models.
+## Architecture
 
-Быстрый запуск LiteLLM
-1. Подними локальные llama-server на 8080 и 8081.
-2. Запусти LiteLLM:
+```
+OpenWebUI (port 3000)
+    |
+    v
+llama-server (port 8080, CPU, ngl=0)
+    |
+    model: google_gemma-3-4b-it-Q4_K_M.gguf
 
-```bash
-make up
+LiteLLM proxy (port 4000) — optional, for multi-model routing
+    |
+    Postgres
 ```
 
-3. Проверка:
+- **llama-server** runs natively on the host (not in Docker) for direct hardware access.
+- **OpenWebUI** runs in Docker, connects directly to llama-server.
+- **LiteLLM** runs in Docker, optional — use `make up-litellm` if needed.
+
+## Quick Start
 
 ```bash
-make health
-make list-models
+# 1. Install llama.cpp (brew build, CPU-only on this machine)
+brew install llama.cpp
+
+# 2. Download model
+make download
+
+# 3. Start llama-server + OpenWebUI
+make bootstrap
+
+# 4. Open http://localhost:3000
 ```
 
-Порядок проверки, если связка не работает
-1. Сначала проверяй fast-модель напрямую на llama-server (без LiteLLM).
-2. Только после этого проверяй LiteLLM на 4000.
-3. Если напрямую работает, а через LiteLLM нет, проблема в proxy/DB/config.
+## Makefile targets
 
-Проверка llama-server напрямую (обязательно)
-1. Health:
+| Command | Description |
+|---|---|
+| `make bootstrap` | Download model, start llama-server + OpenWebUI |
+| `make serve-fast` | Start llama-server on port 8080 |
+| `make stop-fast` | Stop llama-server |
+| `make up-openwebui` | Start OpenWebUI only |
+| `make up-litellm` | Start LiteLLM + Postgres |
+| `make down` | Stop all Docker services |
+| `make logs` | OpenWebUI logs |
+| `make health` | Check LiteLLM health |
+| `make download` | Download Gemma 3 4B model |
+
+## Environment variables
+
+Copy `.env.example` to `.env` and adjust:
+
+```bash
+cp .env.example .env
+```
+
+Key variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `LLAMA_SERVER_BIN` | auto-detect | Path to llama-server binary |
+| `FAST_NGL` | `0` | GPU layers. Keep 0 — Metal is broken on this machine |
+| `LITELLM_MASTER_KEY` | `sk-local-change-me` | Change before any external access |
+
+## Diagnostics
+
+### Check llama-server directly
 
 ```bash
 curl -sS http://127.0.0.1:8080/health
-```
 
-2. Тест RU:
-
-```bash
 curl -sS http://127.0.0.1:8080/v1/chat/completions \
-	-H "Content-Type: application/json" \
-	-d '{
-		"model": "local-fast",
-		"messages": [
-			{"role": "system", "content": "Отвечай коротко."},
-			{"role": "user", "content": "Ответь по-русски одной фразой: как тебя зовут?"}
-		],
-		"temperature": 0.2,
-		"max_tokens": 80
-	}'
+  -H "Content-Type: application/json" \
+  -d '{"model":"local-fast","messages":[{"role":"user","content":"Say: ok"}],"max_tokens":10}'
 ```
 
-3. Тест EN:
-
-```bash
-curl -sS http://127.0.0.1:8080/v1/chat/completions \
-	-H "Content-Type: application/json" \
-	-d '{
-		"model": "local-fast",
-		"messages": [
-			{"role": "system", "content": "Answer briefly."},
-			{"role": "user", "content": "Reply in one short English sentence: what is your name?"}
-		],
-		"temperature": 0.2,
-		"max_tokens": 80
-	}'
-```
-
-Проверка через LiteLLM (порт 4000)
-1. Health:
+### Check LiteLLM
 
 ```bash
 curl -sS http://127.0.0.1:4000/health
-```
 
-2. Список моделей:
-
-```bash
 curl -sS http://127.0.0.1:4000/v1/models \
-	-H "Authorization: Bearer sk-local-change-me"
+  -H "Authorization: Bearer sk-local-change-me"
 ```
 
-3. Chat через proxy:
-
-```bash
-curl -sS http://127.0.0.1:4000/v1/chat/completions \
-	-H "Authorization: Bearer sk-local-change-me" \
-	-H "Content-Type: application/json" \
-	-d '{
-		"model": "local-fast",
-		"messages": [{"role": "user", "content": "Коротко ответь по-русски: проверка через LiteLLM"}],
-		"temperature": 0.2,
-		"max_tokens": 80
-	}'
-```
-
-Если видишь Empty reply from server на 4000
-1. Проверь контейнеры:
+### LiteLLM not responding (Empty reply from server)
 
 ```bash
 docker compose ps
+docker logs litellm | tail -50
+docker exec litellm env | grep -E "DATABASE_URL|LITELLM_MASTER_KEY"
+make down && make up-litellm
 ```
 
-2. Проверь, что Postgres healthy.
-3. Проверь env в контейнере LiteLLM:
+## Notes on GPU (for future reference)
 
-```bash
-docker exec litellm env | grep -E "DATABASE_URL|LITELLM_MASTER_KEY|UI_USERNAME|UI_PASSWORD"
-```
+If running on Apple Silicon Mac, set `FAST_NGL=999` in `.env` to offload all layers to GPU.
 
-4. Проверь процессы внутри контейнера:
+On this Intel Mac with AMD Radeon Pro 5600M, `FAST_NGL=0` is the only working configuration.
+Any value above 0 causes garbled/garbage output due to broken Metal compute kernels for
+discrete AMD GPUs on x86_64.
 
-```bash
-docker exec litellm sh -lc 'ps -ef; netstat -ltnp 2>/dev/null | head -30'
-```
+## Security
 
-5. Проверь логи:
+- Never commit `.env` or GGUF model files.
+- Change `LITELLM_MASTER_KEY` before exposing any port externally.
+- Model files are excluded via `.gitignore`.
 
-```bash
-docker logs litellm | tail -100
-```
 
-6. Если 8080 напрямую отвечает, а 4000 нет, перезапусти proxy-стек:
-
-```bash
-make down
-make up
-```
-
-7. Если проблема повторяется, проверь корректность DATABASE_URL и config/litellm_config.yaml.
-
-Важно по безопасности
-- Перед внешним доступом поменяй ключ в config/litellm_config.yaml (master_key).
-- Не коммить .env и GGUF-модели в репозиторий.

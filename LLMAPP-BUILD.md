@@ -1,25 +1,28 @@
-llmapp сборки для моего ноута с дискретной графикой
+# LLMAPP Build Guide — MacBook Pro 16 (2019), Intel + AMD 5600M
 
-Что это за файл
-- Пошаговый гайд, как собрать и запустить локальный llmapp на MacBook Pro 16 2019 (Intel + AMD 5600M).
-- Цель: максимальная скорость инференса через Metal на хосте и удобный единый API через Docker.
+## About this file
+- Step-by-step guide to build and run a local llmapp on MacBook Pro 16 2019 (Intel + AMD 5600M).
+- Goal: maximum inference speed via Metal on the host, with a single unified API via Docker.
 
-Машина и ограничения
+## Hardware and constraints
 - CPU: Intel i9-9980HK
 - RAM: 64 GB
 - GPU: AMD Radeon Pro 5600M, 8 GB HBM2
-- Важно: на macOS Intel Docker обычно не дает полноценный GPU passthrough для llama.cpp.
-- Вывод: llama.cpp запускаем нативно, Docker используем как API-шлюз.
+- Note: on macOS Intel, Docker does not provide reliable GPU passthrough for llama.cpp.
+- Conclusion: run llama.cpp natively; use Docker as an API gateway only.
 
-Итоговая схема
-- llama-server #1 (host, GPU): быстрая модель 8B
-- llama-server #2 (host, CPU/partial GPU): более тяжелая модель
-- LiteLLM (docker): один endpoint для клиентов
+> **GPU STATUS:** AMD Radeon Pro 5600M on Intel Mac x86_64 does NOT work with Metal compute in llama.cpp.
+> Use `ngl=0` (CPU-only). For GPU acceleration, Apple Silicon (M1/M2/M3/M4) is required.
 
-1) Подготовка системы
-1. Подключи ноутбук к питанию.
-2. Отключи Automatic graphics switching.
-3. Проверь инструменты:
+## Target architecture
+- llama-server #1 (host, GPU on Apple Silicon / CPU on Intel): fast 8B model
+- llama-server #2 (host, CPU or partial GPU): heavier model
+- LiteLLM (Docker): single endpoint for all clients
+
+## 1) System preparation
+1. Connect the laptop to power.
+2. Disable Automatic graphics switching.
+3. Check tools:
 
 ```bash
 xcode-select -p
@@ -27,26 +30,27 @@ brew --version
 docker --version
 ```
 
-Если xcode-select не настроен:
+If xcode-select is not configured:
 
 ```bash
 xcode-select --install
 ```
 
-2) Создай структуру проекта
-Выполняй из папки local-llm:
+## 2) Create project structure
+Run from the local-llm folder:
 
 ```bash
 mkdir -p models
 mkdir -p config
 ```
 
-Ожидаемо:
-- models: GGUF файлы моделей
-- config: конфиги LiteLLM
+Expected:
+- `models/` — GGUF model files
+- `config/` — LiteLLM config files
 
-3) Установка llama.cpp
-Вариант A (быстро): через brew
+## 3) Install llama.cpp
+
+### Option A (quick): via brew
 
 ```bash
 brew install llama.cpp
@@ -54,11 +58,11 @@ which llama-server
 llama-server --help | head
 ```
 
-Что это дает:
-- Быстрая установка готового бинарника.
-- На macOS Metal обычно уже включен в сборке.
+What this gives:
+- Fast installation of a prebuilt binary.
+- Metal is usually already enabled in the brew build (Apple Silicon only).
 
-Вариант B (полный контроль, рекомендовано если нужна 100% гарантия Metal)
+### Option B (full control, recommended if you need 100% Metal guarantee)
 
 ```bash
 git clone https://github.com/ggerganov/llama.cpp
@@ -68,22 +72,23 @@ cmake --build build -j
 ./build/bin/llama-server --help | head
 ```
 
-Что это дает:
-- Ты явно задаешь GGML_METAL=ON.
-- Удобно для диагностики и воспроизводимой сборки.
+What this gives:
+- You explicitly set GGML_METAL=ON.
+- Useful for diagnostics and reproducible builds.
 
-4) Подготовка моделей
-Положи GGUF-файлы в папку models.
-Рекомендованные стартовые профили:
+## 4) Prepare models
+Place GGUF files in the `models/` folder.
+Recommended starting profiles:
 - Fast: 8B Instruct Q4_K_M
-- Strong: 14B Instruct Q4_K_M (будет медленнее)
+- Strong: 14B Instruct Q4_K_M (slower)
 
-Пример имен:
-- models/Llama-3.1-8B-Instruct-Q4_K_M.gguf
-- models/Qwen2.5-14B-Instruct-Q4_K_M.gguf
+Example filenames:
+- `models/Llama-3.1-8B-Instruct-Q4_K_M.gguf`
+- `models/Qwen2.5-14B-Instruct-Q4_K_M.gguf`
 
-5) Запуск двух нативных API-серверов
-Терминал 1 (Fast, GPU):
+## 5) Start two native API servers
+
+Terminal 1 (Fast, Apple Silicon GPU / Intel CPU):
 
 ```bash
 llama-server \
@@ -96,7 +101,9 @@ llama-server \
   --port 8080
 ```
 
-Терминал 2 (Strong, стабильный):
+> On Intel Mac with AMD 5600M, use `-ngl 0` (CPU-only). Metal does not work correctly.
+
+Terminal 2 (Strong, CPU-only):
 
 ```bash
 llama-server \
@@ -109,21 +116,22 @@ llama-server \
   --port 8081
 ```
 
-Для чего:
-- 8080: быстрые повседневные запросы.
-- 8081: более сложные задачи с приоритетом качества.
+Purpose:
+- 8080: fast everyday requests.
+- 8081: more complex tasks where quality is the priority.
 
-6) Проверка, что серверы живы
+## 6) Verify servers are alive
 
 ```bash
 curl http://127.0.0.1:8080/health
 curl http://127.0.0.1:8081/health
 ```
 
-Если health не поддерживается в твоем билде, проверь через chat/completions.
+If health endpoint is not supported in your build, test via chat/completions.
 
-7) Подключаем Docker-шлюз (LiteLLM)
-Создай файл config/litellm_config.yaml:
+## 7) Connect Docker gateway (LiteLLM)
+
+Create `config/litellm_config.yaml`:
 
 ```yaml
 model_list:
@@ -143,7 +151,7 @@ general_settings:
   master_key: sk-local-master
 ```
 
-Создай docker-compose.yml в корне local-llm:
+Create `docker-compose.yml` in the local-llm root:
 
 ```yaml
 services:
@@ -158,14 +166,14 @@ services:
     restart: unless-stopped
 ```
 
-Запуск:
+Start:
 
 ```bash
 docker compose up -d
 docker compose ps
 ```
 
-8) Проверка единого API
+## 8) Verify unified API
 
 ```bash
 curl http://127.0.0.1:4000/health
@@ -173,7 +181,7 @@ curl http://127.0.0.1:4000/v1/models \
   -H "Authorization: Bearer sk-local-master"
 ```
 
-Тест local-fast:
+Test local-fast:
 
 ```bash
 curl http://127.0.0.1:4000/v1/chat/completions \
@@ -181,13 +189,13 @@ curl http://127.0.0.1:4000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "local-fast",
-    "messages": [{"role": "user", "content": "Сделай короткий план миграции"}],
+    "messages": [{"role": "user", "content": "Write a short migration plan"}],
     "temperature": 0.2,
     "max_tokens": 200
   }'
 ```
 
-Тест local-strong:
+Test local-strong:
 
 ```bash
 curl http://127.0.0.1:4000/v1/chat/completions \
@@ -195,36 +203,37 @@ curl http://127.0.0.1:4000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "local-strong",
-    "messages": [{"role": "user", "content": "Сравни 2 архитектуры и риски"}],
+    "messages": [{"role": "user", "content": "Compare 2 architectures and their risks"}],
     "temperature": 0.2,
     "max_tokens": 300
   }'
 ```
 
-9) Тюнинг под твое железо
-Порядок действий при проблемах:
-1. Уменьшить context: 4096 -> 3072 -> 2048.
-2. Уменьшить ngl на GPU-профиле.
-3. Снизить batch (-b).
-4. Перейти на более легкую квантовку/модель.
+## 9) Tuning for your hardware
 
-Практика:
-- Не пытайся агрессивно грузить VRAM сразу двумя тяжелыми моделями.
-- Для стабильности оставляй GPU в основном fast-профиле.
+Steps when encountering problems:
+1. Reduce context: 4096 -> 3072 -> 2048.
+2. Reduce `ngl` on the GPU profile.
+3. Reduce batch size (`-b`).
+4. Switch to a lighter quantization or smaller model.
 
-10) Как запускать каждый день
-1. Запускаешь оба llama-server.
-2. Поднимаешь docker compose.
-3. Все клиенты отправляют запросы только на порт 4000.
-4. Модель выбираешь по model: local-fast или local-strong.
+Best practices:
+- Do not aggressively load VRAM with two heavy models simultaneously.
+- For stability, keep GPU primarily on the fast profile.
 
-11) Частые проблемы
-- Медленно: проверь, что fast-модель действительно с ngl > 0.
-- Падения/OOM: уменьши context и ngl.
-- Docker не достучался до хоста: проверь host.docker.internal и порты 8080/8081.
+## 10) Daily startup routine
+1. Start both llama-server processes.
+2. Bring up docker compose.
+3. All clients send requests only to port 4000.
+4. Select the model using the `model` field: `local-fast` or `local-strong`.
 
-12) Что считать успешной сборкой llmapp
-- Оба llama-server стабильно отвечают.
-- LiteLLM возвращает список моделей.
-- Оба тестовых запроса проходят через единый endpoint на 4000.
-- Система работает без постоянного swap и без вылетов.
+## 11) Common issues
+- Slow: verify the fast model is actually running with `ngl > 0` (Apple Silicon only).
+- Crashes/OOM: reduce context and `ngl`.
+- Docker cannot reach the host: check `host.docker.internal` and ports 8080/8081.
+
+## 12) Definition of a successful llmapp build
+- Both llama-server instances respond stably.
+- LiteLLM returns the model list.
+- Both test requests pass through the unified endpoint on port 4000.
+- System runs without constant swap usage or crashes.

@@ -8,6 +8,9 @@ LLAMA_SERVER_BIN ?=
 LLAMA_SERVER ?= $(if $(LLAMA_SERVER_BIN),$(LLAMA_SERVER_BIN),$(shell if command -v llama-server >/dev/null 2>&1; then command -v llama-server; elif [ -x /opt/homebrew/bin/llama-server ]; then echo /opt/homebrew/bin/llama-server; elif [ -x /usr/local/bin/llama-server ]; then echo /usr/local/bin/llama-server; elif [ -x /opt/homebrew/opt/llama.cpp/bin/llama-server ]; then echo /opt/homebrew/opt/llama.cpp/bin/llama-server; elif [ -x /usr/local/opt/llama.cpp/bin/llama-server ]; then echo /usr/local/opt/llama.cpp/bin/llama-server; fi))
 LITELLM_PORT ?= 4000
 MASTER_KEY   ?= sk-local-change-me
+# ngl=0 = CPU-only (stable on Intel Mac + AMD Radeon Pro 5600M)
+# brew llama-server 9430 was built without Metal (ngl is ignored).
+# Custom build 9538 (5343f4502) has broken Metal blk-kernels - garbled output at ngl>0.
 FAST_NGL     ?= 0
 
 # ── Docker ────────────────────────────────────────────────────────────────────
@@ -72,7 +75,7 @@ download-fast:
 	./scripts/download-models.sh fast
 
 ls-models:
-	@ls -lh $(MODELS_DIR)/*.gguf 2>/dev/null || echo "Нет gguf файлов в $(MODELS_DIR)"
+	@ls -lh $(MODELS_DIR)/*.gguf 2>/dev/null || echo "No gguf files in $(MODELS_DIR)"
 
 # ── llama-server (native, background via nohup) ───────────────────────────────
 
@@ -85,19 +88,20 @@ check-llama-server:
 	fi
 
 serve-fast: check-llama-server
-	@echo "Запуск fast-сервера на порту 8080 (FAST_NGL=$(FAST_NGL))..."
+	@echo "Starting fast server on port 8080 (FAST_NGL=$(FAST_NGL))..."
 	nohup $(LLAMA_SERVER) \
 	  -m $(FAST_MODEL) \
 	  -c 4096 -ngl $(FAST_NGL) -t 10 -b 512 \
 	  --host 127.0.0.1 --port 8080 \
+	  $(FAST_EXTRA_ARGS) \
 	  > logs/llama-fast.log 2>&1 & echo $$! > .pid-fast
-	@echo "PID: $$(cat .pid-fast) | лог: logs/llama-fast.log"
+	@echo "PID: $$(cat .pid-fast) | log: logs/llama-fast.log"
 
 serve-all: serve-fast
-	@echo "Fast сервер запущен."
+	@echo "Fast server started."
 
 stop-fast:
-	@if [ -f .pid-fast ]; then kill $$(cat .pid-fast) && rm .pid-fast && echo "fast остановлен"; else echo "fast не запущен"; fi
+	@if [ -f .pid-fast ]; then kill $$(cat .pid-fast) && rm .pid-fast && echo "fast stopped"; else echo "fast is not running"; fi
 
 stop-all: stop-fast
 
@@ -106,13 +110,12 @@ check-process-files:
 		if [ -f "$$pidfile" ]; then \
 			pid=$$(cat "$$pidfile"); \
 			if kill -0 "$$pid" 2>/dev/null; then \
-				echo "$$pidfile -> PID $$pid жив"; \
-			else \
-				echo "$$pidfile -> PID $$pid мёртв"; \
-			fi; \
+					echo "$$pidfile -> PID $$pid alive"; \
+				else \
+					echo "$$pidfile -> PID $$pid dead"; \
+				fi; \
 		else \
-			echo "$$pidfile -> файла нет"; \
-		fi; \
+			echo "$$pidfile -> file not found"; \
 	done
 
 stop-process-files: check-process-files
@@ -120,32 +123,32 @@ stop-process-files: check-process-files
 		if [ -f "$$pidfile" ]; then \
 			pid=$$(cat "$$pidfile"); \
 			if kill -0 "$$pid" 2>/dev/null; then \
-				kill "$$pid" && echo "остановлен $$pid (из $$pidfile)"; \
-			else \
-				echo "$$pidfile -> PID $$pid уже не существует"; \
+					kill "$$pid" && echo "stopped $$pid (from $$pidfile)"; \
+				else \
+					echo "$$pidfile -> PID $$pid no longer exists"; \
 			fi; \
 			rm -f "$$pidfile"; \
 		fi; \
 	done
 
 llama-processes: check-process-files
-	@echo "== llama-server процессы =="
-	@pgrep -af 'llama-server' || echo "Нет процессов llama-server"
+	@echo "== llama-server processes =="
+	@pgrep -af 'llama-server' || echo "No llama-server processes running"
 
 status: llama-processes
 	@echo "== docker compose =="
-	@docker compose ps 2>/dev/null || echo "docker compose не запущен или недоступен"
+	@docker compose ps 2>/dev/null || echo "docker compose is not running or not available"
 
 logs-fast:
 	tail -f logs/llama-fast.log
 
-# ── Полный старт (скачать + запустить серверы + поднять docker) ───────────────
+# ── Full start (download + start servers + bring up docker) ──────────────────
 
 bootstrap: download check-llama-server serve-fast up-openwebui
-	@echo "=== bootstrap завершён ==="
+	@echo "=== bootstrap complete ==="
 	@echo "  llama fast  -> http://127.0.0.1:8080"
 	@echo "  OpenWebUI   -> http://127.0.0.1:3000"
-	@echo "  LiteLLM     -> запускай отдельно: make up-litellm"
+	@echo "  LiteLLM     -> start separately: make up-litellm"
 
 .PHONY: up up-all up-litellm up-openwebui \
 	down down-litellm down-openwebui \
