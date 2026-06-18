@@ -91,7 +91,7 @@ serve-fast: check-llama-server
 	@echo "Starting fast server on port 8080 (FAST_NGL=$(FAST_NGL))..."
 	nohup $(LLAMA_SERVER) \
 	  -m $(FAST_MODEL) \
-	  -c 4096 -ngl $(FAST_NGL) -t 10 -b 512 \
+	  -c 4096 -ngl 0 -t 12 -b 512 --flash-attn off \
 	  --host 127.0.0.1 --port 8080 \
 	  $(FAST_EXTRA_ARGS) \
 	  > logs/llama-fast.log 2>&1 & echo $$! > .pid-fast
