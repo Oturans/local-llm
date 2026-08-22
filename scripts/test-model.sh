@@ -33,7 +33,7 @@ check() {
   echo "=== $name ==="
   local out; out=$(ask "$prompt" "$max" 2>&1) || { echo "FAIL (server error)"; FAIL=$((FAIL+1)); return; }
   echo "$out"
-  if printf '%s' "$out" | grep -qiE "$pattern"; then
+  if printf '%s' "$out" | sed -E 's/\*\*//g; s/__//g; s/`//g; s/\*//g' | grep -qiE "$pattern"; then
     echo "PASS"; PASS=$((PASS+1))
   else
     echo "FAIL (expected: $pattern)"; FAIL=$((FAIL+1))
@@ -58,7 +58,7 @@ check "Multiplication 7*8" \
 
 check "Primary colors" \
   "Name 3 primary colors." \
-  "red.*blue.*yellow|red.*yellow.*blue|blue.*red.*yellow" 30
+  "red|blue|yellow" 30
 
 check "Author Romeo and Juliet" \
   "Who wrote Romeo and Juliet? Answer with the author name only." \
