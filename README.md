@@ -71,6 +71,11 @@ LiteLLM proxy (port 4000) — optional, for multi-model routing
 ## Quick Start
 
 ```bash
+# 0. Prerequisites (one-time): Homebrew, Xcode CLT, CMake, git
+brew --version || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+xcode-select --version || xcode-select --install
+brew install cmake git
+
 # 1. Build llama.cpp with Vulkan (one-time, see LLMAPP-BUILD.md for details)
 brew install molten-vk vulkan-loader glslang shaderc
 git clone https://github.com/ggml-org/llama.cpp
@@ -78,8 +83,10 @@ cd llama.cpp
 cmake -B build-vulkan -DGGML_VULKAN=ON -DGGML_METAL=OFF -DGGML_BLAS=ON \
   -DGGML_BLAS_VENDOR=Apple -DGGML_NATIVE=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build-vulkan -j --target llama-server
+./build-vulkan/bin/llama-server --list-devices   # verify AMD Radeon is listed
 
 # 2. Point .env to the Vulkan build
+cd ..   # back to local-llm repo
 cp .env.example .env
 # edit LLAMA_SERVER_BIN=/path/to/llama.cpp/build-vulkan/bin/llama-server
 

@@ -11,6 +11,49 @@
 - RAM: 64 GB
 - dGPU: AMD Radeon Pro 5600M, 8 GB HBM2 (Metal 3, Vulkan via MoltenVK)
 - iGPU: Intel UHD Graphics 630 (not used for compute)
+ 
+---
+
+## Prerequisites
+
+Before building, verify these tools are installed. On a fresh macOS they are usually missing.
+
+### 1. Homebrew
+
+```bash
+brew --version || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+### 2. Xcode Command Line Tools (provides C/C++ compiler)
+
+```bash
+xcode-select --version || xcode-select --install
+```
+
+### 3. CMake and git (required for all build variants)
+
+```bash
+brew install cmake git
+cmake --version && git --version
+```
+
+### 4. Vulkan dependencies (only for the Vulkan build, B-3)
+
+```bash
+brew install molten-vk vulkan-loader glslang shaderc
+```
+
+If CMake later fails with `Could NOT find Vulkan (missing: glslc)`, that means `shaderc` is not installed — run `brew install shaderc` and re-run cmake.
+
+### 5. Disk space
+
+- Build artifacts: ~2 GB per build directory
+- Models: 2–15 GB per GGUF file
+- Recommended free space: at least 20 GB
+
+```bash
+df -h .
+```
 
 ---
 
@@ -80,15 +123,14 @@ The Metal backend on these cards produces **garbage output** (random multilingua
 
 #### B-3: Vulkan Build (Recommended for Intel Mac with AMD GPU)
 
-Vulkan runs via MoltenVK and correctly supports AMD Radeon on Intel Mac. It detects both GPUs (AMD + Intel UHD). Dependencies:
+Vulkan runs via MoltenVK and correctly supports AMD Radeon on Intel Mac. It detects both GPUs (AMD + Intel UHD).
 
-```bash
-brew install molten-vk vulkan-loader glslang shaderc
-```
-
-- `molten-vk` → `libMoltenVK.dylib` (Vulkan over Metal)
-- `vulkan-loader` → `libvulkan.dylib` + headers
-- `glslang` → `glslangValidator`, `shaderc` → `glslc` (shader compilers, required by CMake `FindVulkan`)
+> Prerequisites: install the Vulkan dependencies from the [Prerequisites](#4-vulkan-dependencies-only-for-the-vulkan-build-b-3) section first:
+> `brew install molten-vk vulkan-loader glslang shaderc`
+>
+> - `molten-vk` → `libMoltenVK.dylib` (Vulkan over Metal)
+> - `vulkan-loader` → `libvulkan.dylib` + headers
+> - `glslang` → `glslangValidator`, `shaderc` → `glslc` (shader compilers, required by CMake `FindVulkan`)
 
 ```bash
 cmake -B build-vulkan \
@@ -99,6 +141,23 @@ cmake -B build-vulkan \
   -DGGML_NATIVE=ON \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build build-vulkan -j --target llama-server
+```
+
+**Common CMake errors:**
+- `Could NOT find Vulkan (missing: glslc)` → `brew install shaderc` (provides `glslc`)
+- `Could NOT find Vulkan (missing: Vulkan_LIBRARY)` → `brew install vulkan-loader`
+- `Could NOT find Vulkan (missing: Vulkan_INCLUDE_DIR)` → `brew install vulkan-headers` (usually pulled in by vulkan-loader)
+
+**Verify the build detects your GPU:**
+```bash
+./build-vulkan/bin/llama-server --list-devices
+```
+Expected output on Intel Mac with AMD dGPU:
+```
+Available devices:
+  Vulkan0: AMD Radeon Pro 5600M (8176 MiB, 8175 MiB free)
+  Vulkan1: Intel(R) UHD Graphics 630 (65536 MiB, 1527 MiB free)
+  BLAS: Accelerate (0 MiB, 0 MiB free)
 ```
 
 **What you get:**
