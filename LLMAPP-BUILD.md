@@ -228,6 +228,56 @@ Normal. `blk.64` is MTP (Multi-Token Prediction), used only for training/specula
 
 ---
 
+## Test Cases
+
+Use `scripts/test-model.sh` to verify a model produces correct output after building. The script runs 7 test cases (knowledge, math, coding, reasoning) against a running llama-server instance.
+
+```bash
+# Start a server first (in another terminal)
+make serve-fast
+
+# Run the test suite
+./scripts/test-model.sh 8080 "gemma-4-12b Q3_K_S Vulkan"
+
+# Output: per-test PASS/FAIL + throughput (tg/s) + summary
+```
+
+### Test cases
+
+| # | Test | Prompt (short) | Expected |
+|---|---|---|---|
+| 1 | Capital of France | "What is the capital of France? One word." | `Paris` |
+| 2 | Multiplication | "How much is 7 * 8? One number." | `56` |
+| 3 | Primary colors | "Name 3 primary colors." | `red`, `blue`, `yellow` |
+| 4 | Author | "Who wrote Romeo and Juliet? Author name only." | `Shakespeare` |
+| 5 | Chemistry | "What is the chemical symbol for water?" | `H2O` |
+| 6 | Coding | "Write a Python palindrome function with docstring and type hints." | `def ... palindrome` |
+| 7 | Reasoning | "If A>B and B>C, which is greater: A or C? One letter." | `A` |
+
+### Reference results (2026-08-23, llama.cpp build 10582)
+
+Use these as a baseline when changing builds, models, or settings. A correct setup should pass all 7 cases.
+
+| Backend | Model | -ngl | -ctx | -np | gen t/s | All pass |
+|---|---|---|---|---|---|---|
+| Vulkan | gemma-3-4b Q4_K_M (2.3 GB) | 99 | 4096 | 4 | 18–20 | 7/7 |
+| Vulkan | Llama-3.1-8B Q4_K_M (4.6 GB) | 99 | 4096 | 4 | 14 | 7/7 |
+| Vulkan | gemma-4-12b Q3_K_S (4.8 GB) | 99 | 65536 | 1 | 5–8 | 7/7 |
+| CPU | gemma-4-12b Q3_K_S (4.8 GB) | 0 | 65536 | 1 | 3.6–4.5 | 7/7 |
+| Vulkan hybrid | Qwen2.5-14B Q4_K_M (8.4 GB) | 24 | 2048 | 4 | 5.0 | 7/7 |
+| Vulkan hybrid | Qwen3.8-27B Q4_K_S (15.4 GB) | 28 | 2048 | 4 | 1.48 | 7/7 |
+| Vulkan hybrid | Qwen3.8-27B IQ3_S (12.0 GB) | 35 | 2048 | 4 | 0.91 | 7/7 |
+| CPU | Qwen3.8-27B Q4_K_S (15.4 GB) | 0 | 2048 | 4 | 1.05 | 7/7 |
+| Metal | any | >0 | — | — | — | 0/7 (garbage) |
+
+**When to re-run:**
+- After rebuilding llama.cpp (new commit / different backend)
+- After changing model or quantization
+- After changing `-ngl`, `-ctx`, `-np`, `-fa` settings
+- As a smoke test before committing changes to the Makefile
+
+---
+
 ## Integration with Makefile and .env
 
 Run configuration is stored in `.env` and `Makefile` of this repository.

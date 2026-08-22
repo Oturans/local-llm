@@ -114,6 +114,7 @@ make bootstrap
 | `make logs` / `make logs-qwen3` | View logs |
 | `make health` | Check LiteLLM health |
 | `make download` | Download the default fast model (gemma-4-12b Q3_K_S). Supports `fast`/`qwen3` profiles |
+| `make test` | Run 7-case test suite against running server (knowledge, math, coding, reasoning) |
 | `make status` | Show llama-server processes + docker status |
 
 ## Environment variables

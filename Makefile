@@ -151,6 +151,16 @@ stop-qwen3:
 logs-qwen3:
 	@tail -f logs/llama-qwen3.log
 
+# ── Test suite (7 cases: knowledge, math, coding, reasoning) ────────────────
+# Run against a running server. Usage:
+#   make test                   # test port 8080
+#   make test TEST_PORT=8081    # test qwen3 server
+TEST_PORT ?= 8080
+TEST_TAG  ?= $(shell basename $(FAST_MODEL) .gguf)
+
+test:
+	@./scripts/test-model.sh $(TEST_PORT) "$(TEST_TAG)"
+
 stop-fast:
 	@if [ -f .pid-fast ]; then kill $$(cat .pid-fast) && rm .pid-fast && echo "fast stopped"; else echo "fast is not running"; fi
 
@@ -207,6 +217,6 @@ bootstrap: download check-llama-server serve-fast up-openwebui
 	logs logs-litellm logs-openwebui ps health list-models \
 	download download-fast ls-models \
 	check-llama-server serve-fast serve-all stop-fast stop-all \
-	serve-qwen3-cpu serve-qwen3-hybrid stop-qwen3 logs-qwen3 \
+	serve-qwen3-cpu serve-qwen3-hybrid stop-qwen3 logs-qwen3 test \
 	check-process-files stop-process-files llama-processes status \
 	logs-fast bootstrap
