@@ -113,7 +113,7 @@ make bootstrap
 | `make down` | Stop all Docker services |
 | `make logs` / `make logs-qwen3` | View logs |
 | `make health` | Check LiteLLM health |
-| `make download` | Download Gemma 3 4B model (legacy) |
+| `make download` | Download the default fast model (gemma-4-12b Q3_K_S). Supports `fast`/`qwen3` profiles |
 | `make status` | Show llama-server processes + docker status |
 
 ## Environment variables
@@ -166,19 +166,13 @@ make down && make up-litellm
 
 ## GPU troubleshooting
 
-### Metal: garbage output on AMD 5600M
-Symptoms: output contains random multilingual characters (`ZigFyM*([்க<s>...`),
-`kIOAccelCommandBufferCallbackErrorTimeout` in logs.
-Fix: use Vulkan backend (see `LLMAPP-BUILD.md`, section B-3).
+For build errors, Metal garbage output, Vulkan hangs, and `no usable GPU found` —
+see the [Troubleshooting section in LLMAPP-BUILD.md](LLMAPP-BUILD.md#troubleshooting--known-issues).
 
-### Vulkan: hangs on long prompts
-Always run with `-fa on` (flash attention). Without it, Vulkan backend hangs on
-prompts longer than ~20 tokens.
-
-### `no usable GPU found`
-Check that the binary was built with the right backend and can see the GPU:
+Quick checks:
 ```bash
 ./build-vulkan/bin/llama-server --list-devices   # should list AMD Radeon
+curl -sS http://127.0.0.1:8080/health             # server alive?
 ```
 
 ## Security

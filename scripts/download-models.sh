@@ -15,7 +15,8 @@ HF_BASE="https://huggingface.co"
 # Model list: <profile> <repo> <filename>
 typeset -a MODELS
 MODELS=(
-  "fast   bartowski/google_gemma-3-4b-it-GGUF       google_gemma-3-4b-it-Q4_K_M.gguf"
+  "fast   unsloth/gemma-4-12b-it-GGUF       gemma-4-12b-it-Q3_K_S.gguf"
+  "qwen3  unsloth/Qwen3.8-27B-GGUF          Qwen3.8-27B-UD-Q4_K_S.gguf"
 )
 
 FILTER="${1:-all}"

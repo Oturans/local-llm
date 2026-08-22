@@ -3,15 +3,9 @@
 ## About this file
 - Universal guide for building [llama.cpp](https://github.com/ggml-org/llama.cpp) for a local llmapp in three variants: **CPU-only**, **Metal**, and **Vulkan**.
 - Anyone who clones this repository can build the backend that fits their hardware.
-- Developer's reference machine (used in notes below): MacBook Pro 16" 2019, Intel i9-9980HK, 64 GB RAM, AMD Radeon Pro 5600M 8 GB HBM2 + Intel UHD 630.
+- Reference machine for notes below: MacBook Pro 16" 2019, Intel i9-9980HK, 64 GB RAM, AMD Radeon Pro 5600M 8 GB HBM2 + Intel UHD 630 (not used for compute).
 - On this machine **Metal is broken** (garbage output + GPU timeouts on AMD 5600M), so the working backend there is **Vulkan**. On Apple Silicon (M1–M4) Metal works perfectly and is the preferred choice.
 
-## Machine Specs (example)
-- CPU: Intel i9-9980HK (8 cores / 16 threads)
-- RAM: 64 GB
-- dGPU: AMD Radeon Pro 5600M, 8 GB HBM2 (Metal 3, Vulkan via MoltenVK)
-- iGPU: Intel UHD Graphics 630 (not used for compute)
- 
 ---
 
 ## Prerequisites
@@ -96,10 +90,7 @@ cmake -B build-cpu \
 cmake --build build-cpu -j --target llama-server
 ```
 
-**What you get:**
-- 100% stable CPU inference, no GPU artifacts.
-- BLAS via Apple Accelerate, `-march=native` for the specific CPU.
-- Binary: `build-cpu/bin/llama-server`.
+Binary: `build-cpu/bin/llama-server`. 100% stable CPU inference via Apple Accelerate BLAS + `-march=native`.
 
 #### B-2: Metal Build (Recommended for Apple Silicon)
 
@@ -114,9 +105,7 @@ cmake -B build-metal \
 cmake --build build-metal -j --target llama-server
 ```
 
-**What you get:**
-- GPU acceleration via Metal.
-- Binary: `build-metal/bin/llama-server`.
+Binary: `build-metal/bin/llama-server`.
 
 **⚠️ Warning for Intel Mac with AMD Radeon (including AMD 5600M):**
 The Metal backend on these cards produces **garbage output** (random multilingual characters, repetitions) and/or `kIOAccelCommandBufferCallbackErrorTimeout` (GPU timeout). Confirmed on llama.cpp builds 9430, 10369, 10582. Use **Vulkan** (B-3) instead.
@@ -160,15 +149,13 @@ Available devices:
   BLAS: Accelerate (0 MiB, 0 MiB free)
 ```
 
-**What you get:**
-- GPU acceleration via Vulkan (AMD Radeon Pro 5600M and Intel UHD 630).
-- Correct output, without the artifacts that Metal produces on this hardware.
-- Binary: `build-vulkan/bin/llama-server`.
-- List available GPUs: `./build-vulkan/bin/llama-server --list-devices`.
+Binary: `build-vulkan/bin/llama-server`.
 
 ---
 
 ## Optimal Launch Parameters
+
+> Values below are examples. The actual defaults used by this repo are in the `Makefile` variables (`FAST_NGL`, `FAST_CTX`, `FAST_THREADS`, `FAST_NP`) — see the [Integration](#integration-with-makefile-and-env) section.
 
 ### CPU Build
 ```bash
@@ -220,25 +207,24 @@ Available devices:
 ## Troubleshooting / Known Issues
 
 ### Metal: garbage output on AMD 5600M (Intel Mac)
-**Symptoms:** output contains random multilingual characters (`ZigFyM*([்க<s>...`), log shows `unparsed peg-native output`, or `kIOAccelCommandBufferCallbackErrorTimeout` and `Compute error`.
-**Cause:** broken Metal blk-kernels on AMD Radeon Pro 5600M (confirmed on builds 9430, 10369, 10582).
-**Fix:** use the Vulkan build (B-3) or the CPU build (B-1).
+**Symptoms:** random multilingual characters in output, `kIOAccelCommandBufferCallbackErrorTimeout` in logs.
+**Cause:** broken Metal blk-kernels (confirmed on builds 9430, 10369, 10582).
+**Fix:** use Vulkan (B-3) or CPU (B-1).
 
 ### brew bottle on Intel Mac without Metal
-`/usr/local/bin/llama-server --list-devices` shows only `BLAS: Accelerate`. On Intel Mac brew does not build with Metal — build from source (B-2 or B-3).
+`llama-server --list-devices` shows only `BLAS: Accelerate`. brew does not build with Metal on Intel Mac — build from source (B-2 or B-3).
 
 ### Vulkan: hangs on long prompts
-Without `-fa on` the Vulkan backend can hang on prompts longer than ~20 tokens. **Solution:** always run with `-fa on`.
+Always run with `-fa on`. Without it, Vulkan hangs on prompts longer than ~20 tokens.
 
 ### `no usable GPU found`
-Verify the binary was built with the right backend and can see the GPU:
 ```bash
-./build-vulkan/bin/llama-server --list-devices   # Vulkan
+./build-vulkan/bin/llama-server --list-devices   # Vulkan — should list AMD Radeon
 ./build-metal/bin/llama-server --list-devices    # Metal
 ```
 
-### `blk.64.*` tensors ignored when loading Qwen3.8-27B
-This is normal. The `blk.64` layer is MTP (Multi-Token Prediction), used during training/speculative-decoding. It is not needed for regular inference and llama.cpp ignores it.
+### `blk.64.*` tensors ignored (Qwen3.8-27B)
+Normal. `blk.64` is MTP (Multi-Token Prediction), used only for training/speculative-decoding. llama.cpp ignores it for regular inference.
 
 ---
 
