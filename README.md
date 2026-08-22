@@ -7,24 +7,45 @@ Local LLM stack for MacBook Pro 16 (2019) — Intel i9 + AMD Radeon Pro 5600M.
 - **CPU:** Intel Core i9-9980HK
 - **RAM:** 64 GB
 - **GPU:** AMD Radeon Pro 5600M (8 GB HBM2) — discrete PCIe GPU
+- **iGPU:** Intel UHD Graphics 630 (not used for compute)
 
 ## GPU Status
 
-> **GPU inference is not functional on this machine.**
+> **Metal is broken on AMD 5600M (Intel Mac), but Vulkan works.**
 
-Extensive testing confirmed that AMD Radeon Pro 5600M (discrete PCIe GPU on Intel Mac x86_64)
-does not produce correct output with any available Metal backend:
+Extensive testing confirmed that the Metal backend produces garbage output on this
+GPU, while the Vulkan backend (via MoltenVK) works correctly and faster than CPU.
+
+### Test results (5-question benchmark: capitals, math, colors, literature, chemistry)
+
+| Backend | Model | t/s (gen) | Quality | Notes |
+|---|---|---|---|---|
+| **Vulkan** (ngl=99) | gemma-3-4b Q4_K_M (2.3 GB) | 18–20 | 5/5 | best speed |
+| **Vulkan** (ngl=99) | Llama-3.1-8B Q4_K_M (4.6 GB) | 14 | 5/5 | |
+| **Vulkan** (ngl=99) | **gemma-4-12b Q3_K_S (4.8 GB)** | 5–8 | 5/5 | current default |
+| **Vulkan** (ngl=99) | gemma-4-12b Q3_K_S, ctx 64K | 5–8 | 5/5 | opencode preset |
+| **CPU** (ngl=0, 8 threads) | gemma-4-12b Q3_K_S | 3.6–4.5 | 5/5 | fallback |
+| **Vulkan hybrid** (ngl=24) | Qwen2.5-14B Q4_K_M (8.4 GB) | 5.0 | 5/5 | partial offload |
+| **Vulkan hybrid** (ngl=28) | Qwen3.8-27B Q4_K_S (15.4 GB) | 1.48 | 5/5 | partial offload |
+| **Vulkan hybrid** (ngl=35) | Qwen3.8-27B IQ3_S (12.0 GB) | 0.91 | 5/5 | partial offload |
+| **CPU** (ngl=0) | Qwen3.8-27B Q4_K_S (15.4 GB) | 1.05 | 5/5 | slow but stable |
+| **Metal** (ngl>0) | any model | — | garbage | broken, see below |
+
+### Why Metal fails on AMD 5600M
 
 | Tool | GPU detected | Output correct |
 |---|---|---|
-| llama.cpp (custom build, Metal ON) | yes | no — garbage output |
+| llama.cpp (custom build, Metal ON) | yes | no — garbage output + GPU timeout |
 | Ollama 0.30.6 | no — CPU only | yes |
 | brew llama-server 9430 | no — built without Metal | yes |
 
 Root cause: Metal compute kernels in llama.cpp are not validated for discrete AMD GPUs
-on Intel Mac x86_64. Apple Silicon (M-series) is the only supported Metal platform.
+on Intel Mac x86_64. Tested llama.cpp builds: 9430, 10369, 10582 — all produce garbage
+(`kIOAccelCommandBufferCallbackErrorTimeout`). Apple Silicon (M-series) is the only
+Metal platform that works.
 
-**Current setup runs CPU-only.** Performance: ~6 t/s with Gemma 3 4B Q4_K_M.
+**Current setup uses Vulkan backend** via `build-vulkan` (see `LLMAPP-BUILD.md`).
+Performance: ~5–8 t/s with Gemma 4 12B Q3_K_S on GPU, ~4 t/s on CPU.
 
 ## Architecture
 
@@ -32,10 +53,12 @@ on Intel Mac x86_64. Apple Silicon (M-series) is the only supported Metal platfo
 OpenWebUI (port 3000)
     |
     v
-llama-server (port 8080, CPU, ngl=0)
+llama-server (port 8080, Vulkan, ngl=99)
     |
-    model: google_gemma-3-4b-it-Q4_K_M.gguf
+    model: gemma-4-12b-it-Q3_K_S.gguf (64K context, single slot)
 
+llama-server (port 8081, Qwen3.8-27B) — optional, hybrid CPU+GPU
+    |
 LiteLLM proxy (port 4000) — optional, for multi-model routing
     |
     Postgres
@@ -48,16 +71,25 @@ LiteLLM proxy (port 4000) — optional, for multi-model routing
 ## Quick Start
 
 ```bash
-# 1. Install llama.cpp (brew build, CPU-only on this machine)
-brew install llama.cpp
+# 1. Build llama.cpp with Vulkan (one-time, see LLMAPP-BUILD.md for details)
+brew install molten-vk vulkan-loader glslang shaderc
+git clone https://github.com/ggml-org/llama.cpp
+cd llama.cpp
+cmake -B build-vulkan -DGGML_VULKAN=ON -DGGML_METAL=OFF -DGGML_BLAS=ON \
+  -DGGML_BLAS_VENDOR=Apple -DGGML_NATIVE=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build-vulkan -j --target llama-server
 
-# 2. Download model
+# 2. Point .env to the Vulkan build
+cp .env.example .env
+# edit LLAMA_SERVER_BIN=/path/to/llama.cpp/build-vulkan/bin/llama-server
+
+# 3. Download model
 make download
 
-# 3. Start llama-server + OpenWebUI
+# 4. Start llama-server + OpenWebUI
 make bootstrap
 
-# 4. Open http://localhost:3000
+# 5. Open http://localhost:3000
 ```
 
 ## Makefile targets
@@ -65,14 +97,17 @@ make bootstrap
 | Command | Description |
 |---|---|
 | `make bootstrap` | Download model, start llama-server + OpenWebUI |
-| `make serve-fast` | Start llama-server on port 8080 |
-| `make stop-fast` | Stop llama-server |
+| `make serve-fast` | Start llama-server on port 8080 (Vulkan, gemma-4-12b, 64K ctx) |
+| `make serve-qwen3-cpu` | Start Qwen3.8-27B on port 8081 (CPU-only) |
+| `make serve-qwen3-hybrid` | Start Qwen3.8-27B on port 8081 (hybrid CPU+GPU) |
+| `make stop-fast` / `make stop-qwen3` | Stop servers |
 | `make up-openwebui` | Start OpenWebUI only |
 | `make up-litellm` | Start LiteLLM + Postgres |
 | `make down` | Stop all Docker services |
-| `make logs` | OpenWebUI logs |
+| `make logs` / `make logs-qwen3` | View logs |
 | `make health` | Check LiteLLM health |
-| `make download` | Download Gemma 3 4B model |
+| `make download` | Download Gemma 3 4B model (legacy) |
+| `make status` | Show llama-server processes + docker status |
 
 ## Environment variables
 
@@ -86,8 +121,10 @@ Key variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `LLAMA_SERVER_BIN` | auto-detect | Path to llama-server binary |
-| `FAST_NGL` | `0` | GPU layers. Keep 0 — Metal is broken on this machine |
+| `LLAMA_SERVER_BIN` | auto-detect | Path to llama-server binary (use build-vulkan) |
+| `FAST_NGL` | `99` | GPU layers. 99 = full offload (Vulkan) |
+| `FAST_CTX` | `65536` | Context size (64K for opencode) |
+| `FAST_NP` | `1` | Parallel slots (1 = full context for one session) |
 | `LITELLM_MASTER_KEY` | `sk-local-change-me` | Change before any external access |
 
 ## Diagnostics
@@ -120,13 +157,22 @@ docker exec litellm env | grep -E "DATABASE_URL|LITELLM_MASTER_KEY"
 make down && make up-litellm
 ```
 
-## Notes on GPU (for future reference)
+## GPU troubleshooting
 
-If running on Apple Silicon Mac, set `FAST_NGL=999` in `.env` to offload all layers to GPU.
+### Metal: garbage output on AMD 5600M
+Symptoms: output contains random multilingual characters (`ZigFyM*([்க<s>...`),
+`kIOAccelCommandBufferCallbackErrorTimeout` in logs.
+Fix: use Vulkan backend (see `LLMAPP-BUILD.md`, section B-3).
 
-On this Intel Mac with AMD Radeon Pro 5600M, `FAST_NGL=0` is the only working configuration.
-Any value above 0 causes garbled/garbage output due to broken Metal compute kernels for
-discrete AMD GPUs on x86_64.
+### Vulkan: hangs on long prompts
+Always run with `-fa on` (flash attention). Without it, Vulkan backend hangs on
+prompts longer than ~20 tokens.
+
+### `no usable GPU found`
+Check that the binary was built with the right backend and can see the GPU:
+```bash
+./build-vulkan/bin/llama-server --list-devices   # should list AMD Radeon
+```
 
 ## Security
 

@@ -3,15 +3,28 @@ SHELL := /bin/zsh
 -include .env
 
 MODELS_DIR := ./models
-FAST_MODEL  := $(MODELS_DIR)/google_gemma-3-4b-it-Q4_K_M.gguf
+FAST_MODEL  := $(MODELS_DIR)/gemma-4-12b-it-Q3_K_S.gguf
 LLAMA_SERVER_BIN ?=
 LLAMA_SERVER ?= $(if $(LLAMA_SERVER_BIN),$(LLAMA_SERVER_BIN),$(shell if command -v llama-server >/dev/null 2>&1; then command -v llama-server; elif [ -x /opt/homebrew/bin/llama-server ]; then echo /opt/homebrew/bin/llama-server; elif [ -x /usr/local/bin/llama-server ]; then echo /usr/local/bin/llama-server; elif [ -x /opt/homebrew/opt/llama.cpp/bin/llama-server ]; then echo /opt/homebrew/opt/llama.cpp/bin/llama-server; elif [ -x /usr/local/opt/llama.cpp/bin/llama-server ]; then echo /usr/local/opt/llama.cpp/bin/llama-server; fi))
 LITELLM_PORT ?= 4000
 MASTER_KEY   ?= sk-local-change-me
-# ngl=0 = CPU-only (stable on Intel Mac + AMD Radeon Pro 5600M)
-# brew llama-server 9430 was built without Metal (ngl is ignored).
-# Custom build 9538 (5343f4502) has broken Metal blk-kernels - garbled output at ngl>0.
-FAST_NGL     ?= 0
+# ngl=99 = offload all layers to GPU.
+# Metal backend on AMD Radeon Pro 5600M (Intel Mac) produces garbled output
+# and GPU timeouts (kIOAccelCommandBufferCallbackErrorTimeout) across all
+# tested llama.cpp builds (9430, 10369, 10582). Use the Vulkan build instead
+# (build-vulkan with MoltenVK) - it works correctly and faster than CPU.
+# Requires flash-attn on for Vulkan (-fa on) to avoid hangs on longer prompts.
+FAST_NGL     ?= 99
+# Context size tuned for opencode (code agent): gemma-4-12b Q3_K_S (4.8GB) +
+# KV-cache for 64K ctx (~1.5GB) = ~6.5GB of 8GB VRAM (~80% utilization).
+# 64K context fits large files + project trees. -np 1 = single slot (full ctx
+# in one conversation, not split across 4 slots).
+FAST_CTX     ?= 65536
+# Threads: with full GPU offload (-ngl 99) CPU only does prompt-processing,
+# so few threads are optimal (2 = good for most prompts).
+FAST_THREADS ?= 2
+# Parallel slots. 1 = dedicated to one opencode session (uses full context).
+FAST_NP      ?= 1
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 
@@ -88,10 +101,10 @@ check-llama-server:
 	fi
 
 serve-fast: check-llama-server
-	@echo "Starting fast server on port 8080 (FAST_NGL=$(FAST_NGL))..."
+	@echo "Starting fast server on port 8080 (FAST_NGL=$(FAST_NGL), ctx=$(FAST_CTX), np=$(FAST_NP))..."
 	nohup $(LLAMA_SERVER) \
 	  -m $(FAST_MODEL) \
-	  -c 4096 -ngl 0 -t 12 -b 512 --flash-attn off \
+	  -c $(FAST_CTX) -np $(FAST_NP) -ngl $(FAST_NGL) -t $(FAST_THREADS) -b 512 -fa on \
 	  --host 127.0.0.1 --port 8080 \
 	  $(FAST_EXTRA_ARGS) \
 	  > logs/llama-fast.log 2>&1 & echo $$! > .pid-fast
@@ -100,10 +113,48 @@ serve-fast: check-llama-server
 serve-all: serve-fast
 	@echo "Fast server started."
 
+# ── Qwen3.8-27B (27B dense, hybrid CPU+GPU or pure CPU) ───────────────────────
+# 27B model does NOT fit fully in 8GB VRAM. Two presets:
+#   serve-qwen3-cpu    : ngl=0, pure CPU (slow, ~1-2 t/s, but stable)
+#   serve-qwen3-hybrid : ngl=auto, offload as much as fits in VRAM, rest on CPU
+# Override model file / ngl via env:
+#   make serve-qwen3-hybrid QWEN3_FILE=...Qwen3.8-27B-UD-Q4_K_S.gguf QWEN3_NGL=20
+
+QWEN3_FILE  ?= $(MODELS_DIR)/Qwen3.8-27B-UD-IQ2_S.gguf
+QWEN3_NGL   ?= 0
+QWEN3_CTX   ?= 2048
+QWEN3_PORT  ?= 8081
+
+serve-qwen3-cpu: check-llama-server
+	@echo "Starting Qwen3.8-27B on port $(QWEN3_PORT) (CPU-only, ngl=0)..."
+	nohup $(LLAMA_SERVER) \
+	  -m $(QWEN3_FILE) \
+	  -c $(QWEN3_CTX) -ngl 0 -t 8 -b 512 -fa on \
+	  --host 127.0.0.1 --port $(QWEN3_PORT) \
+	  $(QWEN3_EXTRA_ARGS) \
+	  > logs/llama-qwen3.log 2>&1 & echo $$! > .pid-qwen3
+	@echo "PID: $$(cat .pid-qwen3) | log: logs/llama-qwen3.log"
+
+serve-qwen3-hybrid: check-llama-server
+	@echo "Starting Qwen3.8-27B on port $(QWEN3_PORT) (hybrid, ngl=$(QWEN3_NGL))..."
+	nohup $(LLAMA_SERVER) \
+	  -m $(QWEN3_FILE) \
+	  -c $(QWEN3_CTX) -ngl $(QWEN3_NGL) -t 8 -b 512 -fa on \
+	  --host 127.0.0.1 --port $(QWEN3_PORT) \
+	  $(QWEN3_EXTRA_ARGS) \
+	  > logs/llama-qwen3.log 2>&1 & echo $$! > .pid-qwen3
+	@echo "PID: $$(cat .pid-qwen3) | log: logs/llama-qwen3.log"
+
+stop-qwen3:
+	@if [ -f .pid-qwen3 ]; then kill $$(cat .pid-qwen3) && rm .pid-qwen3 && echo "qwen3 stopped"; else echo "qwen3 is not running"; fi
+
+logs-qwen3:
+	@tail -f logs/llama-qwen3.log
+
 stop-fast:
 	@if [ -f .pid-fast ]; then kill $$(cat .pid-fast) && rm .pid-fast && echo "fast stopped"; else echo "fast is not running"; fi
 
-stop-all: stop-fast
+stop-all: stop-fast stop-qwen3
 
 check-process-files:
 	@for pidfile in .pid-fast; do \
@@ -156,5 +207,6 @@ bootstrap: download check-llama-server serve-fast up-openwebui
 	logs logs-litellm logs-openwebui ps health list-models \
 	download download-fast ls-models \
 	check-llama-server serve-fast serve-all stop-fast stop-all \
+	serve-qwen3-cpu serve-qwen3-hybrid stop-qwen3 logs-qwen3 \
 	check-process-files stop-process-files llama-processes status \
 	logs-fast bootstrap
